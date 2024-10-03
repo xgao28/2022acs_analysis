@@ -1,0 +1,110 @@
+
+---
+title: "Doctoral Degree Respondents by State"
+author: 
+  - Xinxiang Gao
+date: today
+date-format: long
+toc: true
+format: pdf
+execute:
+  echo: false
+  message: false
+  warning: false
+---
+
+# Data Acquisition
+
+The data for this analysis is sourced from the IPUMS USA website ([https://usa.ipums.org/usa/index.shtml](https://usa.ipums.org/usa/index.shtml)), which provides access to various census datasets. To obtain the data, navigate to the "Change Samples" section and select the ACS 2022 dataset. During the variable selection process, be sure to include **STATEICP** (state in ICPSR code), **SEX** (gender), and **EDUC** (general educational attainment). Selecting EDUC will also include EDUCD (detailed educational attainment codes, including those for doctoral degrees). After choosing the desired variables, follow the prompts to create and download the data extract in CSV format for further analysis.
+
+# Methodology: the ratio estimators approach
+
+The ratio estimators approach is a statistical technique used to estimate population totals by leveraging known relationships between two variables. In this method, a ratio is calculated using a sample dataset, which relates the quantity of interest to a broader population metric. Specifically, this approach involves determining the ratio of a specific subgroup (e.g., respondents with doctoral degrees) to the total number of respondents within the sample. 
+
+For example, if we denote the number of respondents with doctoral degrees in a state as \(Y\) and the total number of respondents in that state as \(N\), the ratio can be expressed as:
+
+
+$$\hat{R} = \frac{Y}{N}$$
+
+
+Once this ratio is established, it can be applied to the known total number of respondents in the population to estimate the total number of individuals within the subgroup of interest. This method is particularly useful in situations where direct measurements are challenging to obtain, allowing researchers to derive estimates that can inform policy decisions and resource allocation.
+
+
+
+
+
+
+```{r}
+library(dplyr)
+library(readr)
+library(knitr)
+
+```
+```{r}
+# Load the data
+data <- read_csv("usa_00001.csv")
+```
+
+
+```{r}
+# Filter for respondents with a doctoral degree
+doctoral_degree_respondents <- data %>%
+  filter(EDUCD == 116)
+
+# Count the number of respondents per state
+state_doctoral_counts <- doctoral_degree_respondents %>%
+  group_by(STATEICP) %>%
+  summarise(doc_count = n()) %>%
+  arrange(STATEICP)
+
+actual_total_respondents <- data %>%
+  group_by(STATEICP) %>%
+  summarise(total_count = n()) %>%
+  arrange(STATEICP)
+```
+
+```{r}
+#| label: tbl-comp
+#| caption: "Comparison of Estimated and Actual Total Respondents by State"
+ca_total_respondents <- 391171
+ca_doctoral_respondents <- state_doctoral_counts %>%
+  filter(STATEICP == 71) %>%
+  pull(doc_count)  
+
+# Calculate the ratio of doctoral degree respondents to total respondents for ca
+ratio_ca <- ca_doctoral_respondents / ca_total_respondents
+
+# Use the ratio to estimate the total number of respondents for each state
+state_doctoral_counts <- state_doctoral_counts %>%
+  mutate(estimated_total_count = round(doc_count / ratio_ca))
+
+# Combine the estimated and actual counts for comparison
+comparison <- state_doctoral_counts %>%
+  left_join(actual_total_respondents, by = "STATEICP")
+
+# Display the comparison table
+kable(comparison, col.names = c("State (ICPSR)", "Doctoral Degree Respondents", "Estimated Total Respondents", "Actual Total Respondents"))
+```
+
+```{r}
+#| label: fig-percent_diff
+#| caption: "Percentage Difference between Estimated and Actual Total Respondents by State"
+
+# Load the necessary library
+library(ggplot2)
+
+# Calculate the absolute and percentage differences
+comparison <- comparison %>%
+  mutate(Difference = estimated_total_count - total_count,
+         Percentage_Difference = 100 * Difference / total_count)
+
+# Plot the percentage difference for each state
+ggplot(comparison, aes(x = factor(STATEICP), y = Percentage_Difference)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(x = "State (ICPSR)",
+       y = "Percentage Difference (%)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
